@@ -1,0 +1,421 @@
+---
+title: "Networks - a practical"
+author: "Caroline Colijn"
+date: "11 February 2025"
+output: 
+    html_document:
+        toc: true
+        number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(igraph)
+library(igraphdata)
+library(RColorBrewer)
+```
+
+# Networks (graphs) in R 
+> This practical serves 3 purposes: (1) get you more familiar with graphs in R; (2) you can learn how to do you own colour mapping and set colours up; (3) you can create some simple graphs and also look at some small graphs from real data. 
+
+> One of the main packages in R for dealing with graphs is `igraph`. It has some limitations but it seems to be the best documented. Some of the igraph content here is taken from Katya Ognyanova,www.kateto.net/netscix2016  with adaptations.
+
+> If not yet installed, install the package graph by typing `install.packages("igraph")` 
+> Then load it with `library(igraph)`.
+
+> There is also a package called `igraphdata` containing, you guessed it, data about some networks. Please feel free to explore these. I have used the UKfaculty data here (last section). Use `data(package="igraphdata")` to find other datasets. 
+
+# A small example from media data 
+
+> Read the media csv files into R; these specify (a small number of) nodes and edges for a network among media outlets, with numbers of mentions and hyperlinks. See https://github.com/kateto/R-igraph-Network-Workshop-NetSciX/tree/master.  
+
+```{r}
+nodes <- read.csv("Dataset1-Media-Example-NODES.csv", header=T, as.is=T)
+links <- read.csv("Dataset1-Media-Example-EDGES.csv", header=T, as.is=T)
+```
+
+> Take a look directly: 
+
+```{r,echo=FALSE,eval=TRUE}
+head(nodes)
+head(links)
+nrow(nodes); length(unique(nodes$id))
+nrow(links); nrow(unique(links[,c("from", "to")]))
+```
+
+> This code chunk creates a graph, in `igraph` format, from the data. 
+
+
+```{r}
+
+# Collapse multiple links of the same type between the same two nodes by summing their weights, using aggregate() by "from", "to", & "type": (we don't use "simplify()" here so as not to collapse different link types). Don't worry about this for now - I just want to be able to show you a real network and an example of how to read it in and look at it with R. 
+links <- aggregate(links[,3], links[,-3], sum)
+links <- links[order(links$from, links$to),]
+colnames(links)[4] <- "weight"
+rownames(links) <- NULL
+# For now we'll use igraph, so we need to convert these data frames into an igraph object:
+net <- graph_from_data_frame(d=links, vertices=nodes, directed=T) # now an igraph object
+```
+
+
+
+
+# Accessing information about a graph
+
+> Graphs have extra information, stored as attributes of the vertices and also of the eges. Graphs can be considered as directed or undirected. 
+
+```{r}
+net
+```
+
+> From the documentation at http://igraph.org/r/doc/print.igraph.html: 
+
+> "The graph summary printed by summary.igraph (and print.igraph and str.igraph) consists one or more lines. The first line contains the basic properties of the graph, and the rest contains its attributes.
+
+> The first line always starts with IGRAPH, showing you that the object is an igraph graph. Then a four letter long code string is printed. The first letter distinguishes between directed (‘D’) and undirected (‘U’) graphs. The second letter is ‘N’ for named graphs, i.e. graphs in which  the 'name' vertex attribute is set. The third letter is ‘W’ for weighted graphs, i.e. graphs in which the 'weight' edge attribute is set. The fourth letter is ‘B’ for bipartite graphs, i.e. for graphs in which the 'type' vertex attribute is set.
+
+
+
+
+
+
+
+>  We can look at the nodes (vertices), edges, and their attributes:
+
+```{r}
+#E(net)
+#V(net)
+V(net)$media # vertices are media organisations
+E(net)$type # edges are links and mentions: there are two types of edges
+
+```
+
+```{r}
+# Removing loops from the graph:
+# plot(net, edge.arrow.size=.4,vertex.label=NA) # the simplest plot
+net <- simplify(net, remove.multiple = F, remove.loops = T) 
+plot(net,edge.arrow.size=.3,vertex.label=V(net)$media) # a nicer plot
+```
+
+
+>  If you need them, you can extract an edge list or a matrix from igraph networks.
+
+```{r,echo=TRUE,eval=FALSE}
+as_edgelist(net, names=T)
+as_adjacency_matrix(net, attr="weight")
+```
+
+>  Or you can extract data frames describing nodes and edges:
+
+```{r, echo=TRUE, eval=FALSE}
+as_data_frame(net, what="edges")
+as_data_frame(net, what="vertices")
+```
+
+# Some examples using the igraph package
+
+## Direct descriptions of graphs
+
+```{r}
+library(igraph) # Load the igraph package
+```
+
+> Create some graphs
+```{r}
+g1 <- graph( edges=c(1,2, 2,3, 3,1), n=3, directed=F ) # an undirected graph with 3 edges
+# The numbers are interpreted as vertex IDs, so the edges are 1-->2, 2-->3, 3-->1
+plot(g1) # A simple plot of the network - we'll talk more about plots later
+class(g1)
+g1
+```
+
+```{r}
+g2 <- graph( edges=c(1,2, 2,3, 3,1), n=10 ) # now with 10 vertices, and directed by default
+plot(g2)   
+g2
+```
+
+> Names, some isolated nodes, and a better plot using the plot options: 
+
+```{r}
+
+g4 <- graph( c("John", "Jim", "Jim", "Jack", "Jim", "Jack", "John", "John"), 
+             isolates=c("Jesse", "Janis", "Jennifer", "Justin") )  
+# In named graphs we can specify isolates by providing a list of their names.
+
+plot(g4, edge.arrow.size=.5, vertex.color="gold", vertex.size=15, 
+     vertex.frame.color="gray", vertex.label.color="black", 
+     vertex.label.cex=1.5, vertex.label.dist=2, edge.curved=0.2) 
+```
+
+
+## Specific graphs and graph models
+
+
+>  Full graph: everyone is connected to everyone else. What does its adjacency matrix look like? 
+
+
+
+```{r}
+fg <- make_full_graph(10)
+plot(fg, vertex.size=10, vertex.label=NA)
+```
+
+```{r}
+get.adjacency(fg)
+```
+
+> How many paths of length 2 will there be between nodes 1 and 2 in this graph? 
+
+```{r}
+A=get.adjacency(fg); A %*% A
+```
+
+
+> Star graph
+
+```{r}
+st <- make_star(20)
+plot(st, vertex.size=10, vertex.label=NA) 
+```
+
+
+> Tree graph
+
+```{r}
+tr <- make_tree(40, children = 3, mode = "undirected")
+plot(tr, vertex.size=10, vertex.label=NA) 
+```
+
+> How many paths of length 2 are there in the tree graph between two nodes?
+
+```{r}
+A=get.adjacency(tr); aa=A %*% A ; aa[1:10,1:10]
+```
+
+> Note: this counts paths that intersect themselves, that go back and forth, etc. 
+
+# The Giant Component 
+
+> We will create ER graphs with different connectances and watch the appearance of the giant component. For 500 nodes, what is the critical probability when a giant component should form? 
+> It's 1/499, or about 0.002. So we want to set up some ER graphs below and above this threshold. 
+
+
+```{r}
+N <- 500  # Number of nodes
+p_values <- seq(0.2*(1/500), by=0.3*1/500, length.out = 6)  # Probabilities, ranging from 
+```
+
+> Now we'll create a series of ER graphs. In each one, we will find the largest component, and plot it. 
+
+```{r}
+par(mfrow = c(2, 3), mar = c(2, 2, 2, 2))
+
+for (p in p_values) {
+  # Generate an Erdős-Rényi graph
+  G <- erdos.renyi.game(N, p, type = "gnp")
+  
+  # Find the largest connected component
+  components <- components(G)
+  largest_cc <- which(components$membership == which.max(components$csize))
+  G_sub <- induced_subgraph(G, largest_cc)
+  
+  # Plot the largest connected component
+  plot(G_sub, vertex.size = 3, vertex.label = NA, edge.color = "gray",
+       main = paste("p =", round(p, 4), "\nLargest Component Size:", length(largest_cc)))
+}
+
+# Reset plot layout
+par(mfrow = c(1, 1))
+```
+
+> In class, we said that the size of the giant component "scales with" $n$, the size of the graph. When the connection probability is too small, the largest component will not grow proportionally to $n$. Let's test this out. 
+
+
+
+```{r} 
+set.seed(235) # so i can make sure we get a nice one :) 
+N_values <- seq(100, 3000, by = 200)  # Varying number of nodes
+p_values <- 1.2/(N_values)
+largest_component_sizes <- numeric(length(N_values))  # Store results
+C= 1.2
+# Simulate for different graph sizes
+for (i in seq_along(N_values)) {
+  N <- N_values[i]
+  p <- p_values[i]  # Adjust p to keep mean degree constant
+  
+  # Generate an Erdős-Rényi graph with adjusted probability p
+  G <- erdos.renyi.game(N, p, type = "gnp")
+  
+  # Find the largest connected component
+  components <- components(G)
+  largest_component_sizes[i] <- max(components$csize)
+}
+
+# Plot results
+plot(N_values, largest_component_sizes, type = "o", pch = 16, col = "blue",
+     xlab = "Graph Size (N)", ylab = "Size of Largest Component",
+     main = paste("Largest Component Size vs. Graph Size\n(Constant Connectance =", C, ")"))
+grid()
+```
+
+> **EXERCISE** Modify the above code to use a smaller connectance (below the threshold). What happens? 
+
+> **EXERCISE** You could also repeat this experiment to see how variable the giant component sizes are. 
+
+# Facebook graphs
+
+> The degree sequence of a graph is simply the set of degrees of the vertices, usually listed in increasing order. 
+
+> You can extract the degree sequence using the `degree` function. The degree *distribution* (the empirical one, in a specific instance of a graph) refers to the fractions of the vertices with degrees $0, 1, 2, ...$. 
+
+> The file `facebookgraphs.Rdata` includes four facebook graphs taken from https://snap.stanford.edu/data/ . They are called "fb107",  "fb1684", "fb1912" and  "fb3437". 
+
+> Let's take a look at the degree distributions in the facebook graphs and compare these to what we expect from the degree distribution in ER graphs. 
+
+```{r}
+load("facebookgraphs.Rdata")
+ls()
+```
+
+```{r}
+deg1=degree(fb107); head(deg1)
+hist(deg1)
+```
+
+
+> **EXERCISE** Find the means of the degree distributions for the facebook graphs (or just choose one, to start). Find the mean of the squared degree, $E(k^2)$. 
+
+> Since we know the distribution for degree in the Erdos-Renyi (ER) graph, we can create a histogram for the degree distribution you would expect to see in an ER graph with this same mean. Compare these distributions. 
+
+```{r}
+mean_deg = mean(deg1)
+hist(rpois(1000, lambda = mean_deg))
+```
+
+> You can create an Erdos-Renyi graph with the same mean degree as the facebook network by specifying that the number of vertices and edges in the new (ER) graph must be the same as the number of vertices and edges in the facebook graph, with the function `sample_gnm()`: 
+
+```{r}
+er1=sample_gnm(n=length(V(fb107)), m=length(E(fb107)))
+```
+
+> **EXERCISE** Compare the degree distribution in this new ER graph to the distribution you would expect (compare visually). 
+
+> **EXERCISE** Using logic like in the above examples with the giant components, remove edges with some probability $1-\phi$ from the ER graph and from the FB graph (ie keep the edges with probability $\phi$, the *bond occupation probability*.)
+
+> Which network do you think will be likely to maintain a large percolation cluster, even with a smaller edge retention probability? Why? 
+
+> Here is a script that shows you how to remove the edges of a graph with some probability (I'll do this with the er1 graph defined above, and with probability $\phi=0.7$ we keep the edge): 
+
+```{r} 
+# Set phi (probability of keeping an edge)
+phi <- 0.7  # here, we keep 70% of edges on average
+
+# Get all edges
+edges <- E(er1)
+
+# Decide which edges to keep (each edge is kept with probability phi)
+keep_edges <- edges[runif(length(edges)) < phi] # this uses uniform random numbers to decide whether we keep each edge 
+
+# Create a new graph with only the kept edges
+er1_reduced <- subgraph.edges(er1, keep_edges, delete.vertices = FALSE)
+
+# Plot before and after
+par(mfrow = c(1, 2))
+plot(er1, vertex.size = 3, main = "Original Graph")
+plot(er1_reduced, vertex.size = 3, main = paste("Graph after edge removal (phi =", phi, ")"))
+par(mfrow = c(1, 1))  # Reset plot layout
+```
+
+
+> This plot is not helpful, because it's a hairy ball. 
+
+
+> **EXERCISE** What is the critical bond occupation probability $\phi_c$, for this ER network? What is it for the facebook graph? 
+
+> **EXERCISE** Determine when the graphs start to break up (as $\phi$ decreases). Which one breaks up first? Why? 
+
+
+# Graph plotting and colours, with the UK faculty network
+
+> The igraph package has some example data, including the famous Konigsberg graph, US airports, and the famous Enron emails (https://www.cis.jhu.edu/~parky/Enron/Anno_Topic_exp_LDC.pdf), food webs and more. 
+
+```{r}
+data(package="igraphdata")
+```
+
+
+```{r}
+data("UKfaculty")
+UKfaculty
+```
+
+> We see that `UKfaculty` is a directed, weighted graph with 81 vertices and 817 edges. We can access the vertices (which turns out to be just their ids from 1 to 81) with `V(UKfaculty)`. 
+
+> We can also see that there is only one vertex attribute, the "Group". We can see this with 
+
+```{r}
+V(UKfaculty)$Group
+```
+
+> And we can see the edge attribute, `weight` with `E(UKfaculty)$weight` (though that would produce a lot of numbers). Instead: 
+
+```{r}
+hist(E(UKfaculty)$weight,breaks=30,main="Histogram of edge weights")
+```
+
+
+
+> There is a ggplot-style graph visualization package, ggraph: https://ggraph.data-imaginist.com/.
+
+
+```{r}
+plot(UKfaculty, vertex.size=0.3, edge.arrow.size=0.2) # pretty clear options
+```
+
+> Let's plot again but let's map edge weights. There are 2 ways to do this: (1) set the thicknesses in the plot command or (2) set the edge attribute 'width' before 
+plotting. I like (1). Both are fine. 
+
+```{r}
+Ewidth <- E(UKfaculty)$weight/6 # some scaling will be needed to make it look good
+plot(UKfaculty, edge.width=Ewidth, vertex.size=0.3, edge.arrow.size=0.2)
+```
+
+
+> Now let's put the Group of the vertices in. 
+
+```{r}
+length(unique(V(UKfaculty)$Group)) # 4. I need 4 'diverging' cols
+
+# use ?brewer.pal. this function gives a fixed number of colours. 
+divcols=brewer.pal(4, "Accent") # now i have 4 cols. 
+
+# make a vector of colours, where each vertex's colour corresponds to its group
+vcols=divcols[V(UKfaculty)$Group] # works because Group is 1, 2, 3 or 4. If they were names this would not work
+
+plot(UKfaculty, edge.width=Ewidth, vertex.size=5, edge.arrow.size=0.3,vertex.label=NA,vertex.frame.color=NA,vertex.color=vcols)
+
+# We can add a legend
+legend("bottomleft", legend=levels(as.factor(V(UKfaculty)$Group))  , col = divcols , bty = "n", pch=20 , pt.cex = 2, cex = 1.5, text.col=divcols , horiz = FALSE, inset = c(0.1, 0.1))
+```
+
+> Wouldn't it be nice to map higher weight edges to a darker colour? 
+
+```{r}
+NN=16 # edge weights range from 1 to 16
+myblues = colorRampPalette(brewer.pal(9,"Blues"))(NN)
+
+# gets NN colours from the blue palette. brewer.pal makes 9 colours in this example;
+# then the colorRampPalette function interpolates these to get more.
+# this is how you can map a  variable to color . ggplot does all this for us! 
+
+Ecols=myblues[E(UKfaculty)$weight]
+plot(UKfaculty, edge.width=Ewidth, edge.color=Ecols,vertex.size=0.3, edge.arrow.size=0.2,vertex.label.color=vcols)
+```
+
+> It is much nicer (though in fact this one's better if the vertex labels are set to "black"). But it takes a bit of getting used to (and a bit of fiddling with RColorBrewer): first we have to create the right number of colours, then explicitly create a vector of colours, then plot the graph. It was worth it though. 
+
+> You could set up a new edge attribute, corresponding to whether it has a high or low weight, and map that to just two colours. Etc etc. 
+
+> Exercise: Visualize and explore the degree distributions and attributes of some of the other graphs in the igraphdata package. 
+
