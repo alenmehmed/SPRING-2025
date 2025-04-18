@@ -1,0 +1,228 @@
+---
+title: "Phylogenetics Demo in R"
+author: "C. Colijn"
+output: html_document
+---
+## Introduction
+In this document we illustrate some basics of phylogenetics, starting with a multiple sequence (or character) alignment in the "fasta" or "nexus" format. The first step is to load some R libraries that contain the functions we use to work with sequences and phylogenies. 
+
+### Load the required libraries 
+
+```{r, echo=T,message=F}
+# library(adegenet)
+
+library(ape) # reading  the dna, dist.dna, basic phylo plotting
+library(phangorn) # maximum likelihood trees  
+library(stats) # heatmap
+library(ade4)
+library(hierfstat)
+library(phytools)
+```
+
+## Prepare the data
+
+> In this section we read a fasta file from the disk. Fasta is a common multiple sequence alignment format.  (You'll need to set the working directory correctly so that R can find your files). 
+
+> R has various packages with their own data structures and formats. There are several that are related to sequence data. 
+
+> Read the fasta file supplied with the course materials  and convert it to a DNAbin object: 
+
+```{r}
+x1 <-read.dna(file="ourowntree.fas", format="fasta")
+class(x1)
+```
+
+
+> Usually people don't want to read a sequence in R. We use sequence alignment visualization tools for that. But you can access a DNAbin object like you would a matrix: 
+
+```{r} 
+rownames(x1) # the taxa names 
+x1[1,]
+``` 
+
+> This tells you that you have a sequence of length 11. To read the characters in it you can explicitly say that you want to see each letter: 
+
+```{r} 
+as.character(x1[1,])
+```
+
+
+## Distance based tree-building
+
+> We will use pairwise sequence distances to create a quick phylogenetic tree. The R function dist.dna allows the user to choose from a number of dna distances. These correspond to different sequence evolution models, some of which were described in the lecture. 
+
+> Create the distance matrix:
+
+```{r}
+D <- dist.dna(x1,model="JC69")
+class(D)
+D
+```
+
+> D is a distance matrix. To store only one of the values $d_{ij}$ and $d_{ji}$ R uses an object of class 'dist'. 
+
+> We can visualise the distance matrix. Darker values correspond to larger distances. 
+
+```{r}
+heatmap(as.matrix(D),Rowv=NA,Colv=NA,symm=T)
+```
+
+<br> 
+<br>
+
+## A neighbour-joining tree
+
+> The R functions 'nj' and 'bionj' create neighbour-joining trees. 
+
+> Reconstruct and plot the neighbour-joining tree:
+
+```{r}
+tree1 <- nj(D)
+plot(tree1, cex=1)
+title("A simple unrooted NJ tree")
+```
+
+> One drawback of neighbour joining is that when the distances are not additive (and they do not fit any tree perfectly), the neighbour joining tree can end up having negative branch lengths. The quick and dirty fix for this is to manually set any negative ones to some small positive number: 
+
+```{r}
+tree1$edge.length[which(tree1$edge.length <= 0)]<- 0.0000001
+plot(tree1)
+```
+
+## Experiments and exercises: 
+
+> How well does our NJ tree reflect the distance matrix? 
+
+> Find the path lengths between pairs of tips, and compare to the distance matrix values in a scatterplot. The function `cophenetic.phylo` in the ape package will compute the tree's distances. 
+
+> Would you expect a NJ tree to be rooted? Is the tree rooted? (Use `is.rooted()`). 
+
+## Roots and  maximum likelihood phylogeny
+
+> While there are advanced software packages for maximum likelihood phylogenetic inference, sometimes it is handy to have an R version, particularly for relatively small datasets when it's not going to take too long. The phangorn package offers this. 
+
+> First let's load some data and make a neighbour-joining tree for this dataset. These are partial sequences from "Bayesian tests of topology hypotheses with an example from diving beetles", available at https://datadryad.org/dataset/doi:10.5061/dryad.s631d. The paper is at https://academic.oup.com/sysbio/article/62/5/660/1684098?login=false. In the abstract, the authors say "Our refined Bayes factor tests, in contrast to standard analyses, show that there is strong support for Suphrodytes nesting inside Hydroporus, and the genera are therefore synonymized." 
+
+```{r}
+# read the data and convert it to DNAbin format 
+beetle = as.DNAbin(read.nexus.data("beetles-bergsten-seqs.nex"))
+
+# make a distance matrix with the JC69 model 
+Dbeetle = dist.dna(beetle, model = "JC69")
+
+# show the heatmap of the distance matrix 
+heatmap(as.matrix(Dbeetle))
+```
+
+> Now let's make a neighbour-joining phylogeny for our beetles. 
+
+```{r}
+njbeetle=nj(Dbeetle)
+plot(njbeetle) 
+```
+
+> Does the NJ tree support the claim that Suphrodytes nests inside Hydroporus?
+
+> Does this question depend on the root? 
+
+> Is the tree rooted? 
+
+> You can read through paper. The authors say "As outgroups to root the tree we used Andex insignis Sharp, Hyphydrus ovatus (Linnaeus), Hovahydrus minutissimus (Régimbart), Canthyporus hottentottus (Gemminger and Harold) and Laccornellus copelatoides (Sharp) which were part of the two closest clades to the Hydroporus group in Ribera et al. (2008)."
+
+> Use the `root` function to root the tree on one of these taxa, and examine whether Suphrodytes nests inside Hydroporus. 
+
+> Before making a maximum likelihood tree, let's compute the likelihood of our neighbour-joining tree: 
+
+
+```{r}
+
+beetseqs2=as.phyDat(beetle) # these functions require the data in a different format
+fit1 <- pml(njbeetle, beetseqs2, k=4) # pml computes the likelihood and returns some useful output in an object of class 'pml'
+fit1 # this is the likelihood of the NJ tree, tree2, and some other information. 
+```
+
+> The fit1 object contains the data itself (as fit1$data) and a range of other things. 
+
+```{r}
+fit1$data
+``` 
+
+> There are 605 different site patterns. 
+
+> Side exercise: how many are *splits*? You could try exploring the compatibility of the sites, using the maximal clique idea we discussed in class. 
+
+> Now let's seek a maximum likelihood phylogeny using optimisation. The function optim.pml will optimise the tree structure and branch lengths to maximise the likelihood. The result is stored in a data structure called 'fit'. We give it our NJ tree to start with. 
+
+```{r}
+fit <- optim.pml(fit1, optNni=TRUE, optBf=TRUE, optQ=TRUE, optGamma=TRUE)
+```
+
+```{r}
+fit
+mltree= fit$tree
+mltree
+# class(fit)
+# names(fit)
+```
+
+> Verify that the optimised structure (the max likelihood tree) is better than the neighbour joining tree -- for this, we use standard likelihood ratios and the AIC (Aikake Information Criterion): 
+
+```{r}
+anova(fit1, fit)
+```
+
+> We see a much higher log likelihood for the ML tree than the NJ tree, which makes sense, since higher likelihood was what we were optimizing. 
+
+> Plot the tree 
+
+```{r}
+plot(mltree, show.tip=TRUE, cex=1, edge.width=2)
+```
+
+> Is the tree rooted? 
+
+> Again, you can root the tree on one of the outgroup taxa listed in the paper. 
+
+> Does the ML tree support the notion that Suphrodytes nests inside Hydroporus? You may also need to fiddle with the plot parameters. Use `?plot.phylo` to get the relevant documentation. 
+
+> Phylogenetic trees can be plotted in different ways, and the same tree can end up visualised very differently. Here is another option, which doesn't show a root: 
+
+```{r}
+plot(mltree, type="unrooted")
+```
+
+
+> Somewhat deceptively, both rooted-style and unrooted-style visualizations are usable, and used, for both rooted and unrooted trees, depending on how an author wishes to display their data, which depends in turn on what they wish to emphasize, and on clarity considerations for any metadata they are including. 
+
+> You can explore tree visualization and colouring with `ggtree`, especially if you already like ggplot. You could use colour to show the two genera (Suphrodytes and Hydroporus). 
+
+> You could also try "bootstrapping". Phylogenetic bootstrapping is a way to explore how sensitive a maximum likelihood phylogeny is to changes in the data. The method works by resampling the columns of the alignment, with replacement, and rebuilding the phylogeny. Repeating this procedure (say) 100 times gives 100 ML phylogenies, each made with a resampled alignment. You could do this procedure, and ask: in how many of the  bootstrap phylogenies do Suphrodytes beetles nest within Hydroporus ones on the tree? 
+
+> Resampling, in a simple vector: 
+
+```{r}
+x = 1:10
+sample(x, 10, replace=T) # values taken from 1 to 10, allowing some to repeat 
+```
+
+## Tree metrics and random trees
+
+> We learned about the Robinson Foulds, NNI and SPR metrics (briefly) in class. 
+
+> Let's explore random trees, and their distances. 
+
+> Compute the Robinson-Foulds distance between our NJ tree (njbeetle) and our ML tree (mltree): 
+
+```{r}
+RF.dist(njbeetle, mltree)
+```
+
+> Can you find the splits that are different? 
+
+> Sample random trees with some reasonable number of tips (say, 30, 40),  using the function `rtree`. Create a histogram of the Robinson-Foulds distances between pairs of trees. 
+
+
+## More data 
+
+> I found the beetle data in a repository of alignments called BenchmarkAlignments, at https://github.com/roblanf/BenchmarkAlignments/. You can download the `summary.csv` file, use it to identify tractable datasets (not too many taxa, not too many characters, not too high a missing percent), and create other phylogenies, with reference to the relevant papers. 
+
